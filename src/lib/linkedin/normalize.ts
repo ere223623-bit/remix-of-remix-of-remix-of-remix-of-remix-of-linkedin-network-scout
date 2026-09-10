@@ -1,5 +1,6 @@
 import type {
   Capability,
+  DataSource,
   CompanyResult,
   EducationEntry,
   ExperienceEntry,
@@ -90,7 +91,7 @@ export function normalizeEducation(raw: Raw): EducationEntry {
   };
 }
 
-export function normalizePerson(raw: Raw, retrievedAt: string, index = 0): PersonResult {
+export function normalizePerson(raw: Raw, retrievedAt: string, index = 0, source: DataSource = "linkedin"): PersonResult {
   const experience = objArray(raw, "experience", "experiences", "positions");
   const education = objArray(raw, "education", "educations", "schools");
   const currentExperience = experience?.[0];
@@ -113,12 +114,12 @@ export function normalizePerson(raw: Raw, retrievedAt: string, index = 0): Perso
     skills: strArray(raw, "skills"),
     education: education ? education.map(normalizeEducation) : null,
     experience: experience ? experience.map(normalizeExperience) : null,
-    source: "linkedin",
+    source,
     retrieved_at: retrievedAt,
   };
 }
 
-export function normalizeCompany(raw: Raw, retrievedAt: string, index = 0): CompanyResult {
+export function normalizeCompany(raw: Raw, retrievedAt: string, index = 0, source: DataSource = "linkedin"): CompanyResult {
   return {
     id: idFor("company", raw, index),
     name: str(raw, "name", "company_name", "title"),
@@ -127,12 +128,12 @@ export function normalizeCompany(raw: Raw, retrievedAt: string, index = 0): Comp
     description: str(raw, "description", "about", "summary"),
     linkedin_url: str(raw, "linkedin_url", "linkedinUrl", "url", "profile_url", "link"),
     website: str(raw, "website", "site", "homepage"),
-    source: "linkedin",
+    source,
     retrieved_at: retrievedAt,
   };
 }
 
-export function normalizeJob(raw: Raw, retrievedAt: string, index = 0): JobResult {
+export function normalizeJob(raw: Raw, retrievedAt: string, index = 0, source: DataSource = "linkedin"): JobResult {
   return {
     id: idFor("job", raw, index),
     job_title: str(raw, "job_title", "title", "position"),
@@ -141,7 +142,7 @@ export function normalizeJob(raw: Raw, retrievedAt: string, index = 0): JobResul
     description: str(raw, "description", "summary", "snippet"),
     linkedin_url: str(raw, "linkedin_url", "url", "link", "job_url"),
     published_at: str(raw, "published_at", "posted_at", "listed_at", "date_posted"),
-    source: "linkedin",
+    source,
     retrieved_at: retrievedAt,
   };
 }
@@ -150,12 +151,13 @@ export function normalizeResults(
   type: SearchType,
   rawResults: unknown,
   retrievedAt: string,
+  source: DataSource = "linkedin",
 ): (PersonResult | CompanyResult | JobResult)[] {
   if (!Array.isArray(rawResults)) return [];
   const items = rawResults.filter(isRaw);
-  if (type === "people") return items.map((raw, i) => normalizePerson(raw, retrievedAt, i));
-  if (type === "companies") return items.map((raw, i) => normalizeCompany(raw, retrievedAt, i));
-  return items.map((raw, i) => normalizeJob(raw, retrievedAt, i));
+  if (type === "people") return items.map((raw, i) => normalizePerson(raw, retrievedAt, i, source));
+  if (type === "companies") return items.map((raw, i) => normalizeCompany(raw, retrievedAt, i, source));
+  return items.map((raw, i) => normalizeJob(raw, retrievedAt, i, source));
 }
 
 const KNOWN_CAPABILITIES: Capability[] = [

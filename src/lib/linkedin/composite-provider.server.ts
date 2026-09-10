@@ -1,9 +1,4 @@
-import {
-  capabilityForType,
-  normalizeCapabilities,
-  normalizeResults,
-  pruneUnsupportedFilters,
-} from "./normalize";
+import { capabilityForType, normalizeCapabilities } from "./normalize";
 import {
   LinkedInProviderError,
   PROVIDER_ERRORS,
@@ -21,57 +16,62 @@ import type {
   SearchType,
 } from "./types";
 
-type ProviderEntry = { provider: LinkedInProvider; tried: boolean; error?: LinkedInProviderError };
+type ProviderEntry = { provider: LinkedInProvider; error?: LinkedInProviderError };
 
 /**
- * Orchestrates the Lovable LinkedIn connector as primary and the Agent Reach
- * sidecar as fallback. Errors that indicate the primary cannot satisfy a
- * request trigger fallback; auth/rate-limit/configuration errors are surfaced.
+ * Preferred provider order per research type. Apollo runs entirely inside
+ * Lovable, so it leads people and company research; the Agent Reach sidecar is
+ * kept last as the exact-LinkedIn source. Jobs stay on the LinkedIn-sourced
+ * backends — Apollo has no job-posting search and never pretends otherwise.
+ */
+const ROUTING: Record<SearchType, string[]> = {
+  people: ["apollo", "lovable-linkedin", "agent-reach"],
+  companies: ["apollo", "lovable-linkedin", "agent-reach"],
+  jobs: ["lovable-linkedin", "agent-reach", "apollo"],
+};
+
+/**
+ * Orchestrates every configured research provider. Errors that mean a provider
+ * simply cannot answer trigger the next candidate; auth, rate-limit and
+ * configuration errors are surfaced immediately and never fall back silently.
  */
 export class CompositeLinkedInProvider implements LinkedInProvider {
   readonly id = "composite";
-  readonly label = "LinkedIn (auto)";
+  readonly label = "Research (auto)";
+  private readonly providers: LinkedInProvider[];
 
-  constructor(
-    private readonly primary: LinkedInProvider,
-    private readonly fallback: LinkedInProvider,
-  ) {}
+  constructor(...providers: LinkedInProvider[]) {
+    this.providers = providers.flat();
+  }
+
+  private ordered(type: SearchType): LinkedInProvider[] {
+    const rank = (p: LinkedInProvider) => {
+      const index = ROUTING[type].indexOf(p.id);
+      return index === -1 ? ROUTING[type].length : index;
+    };
+    return [...this.providers].sort((a, b) => rank(a) - rank(b));
+  }
 
   async healthCheck(): Promise<ProviderCapabilities> {
-    const [primary, fallback] = await Promise.allSettled([
-      this.primary.healthCheck(),
-      this.fallback.healthCheck(),
-    ]);
-
-    const primaryCap =
-      primary.status === "fulfilled"
-        ? primary.value
+    const settled = await Promise.allSettled(this.providers.map((p) => p.healthCheck()));
+    const reports = settled.map((result, index) =>
+      result.status === "fulfilled"
+        ? result.value
         : normalizeCapabilities(
             {
               available: false,
               authenticated: false,
-              backend: this.primary.id,
+              backend: this.providers[index]?.id ?? null,
               capabilities: [],
-              message: primary.reason instanceof LinkedInProviderError ? primary.reason.message : String(primary.reason),
+              message:
+                result.reason instanceof LinkedInProviderError
+                  ? result.reason.message
+                  : String(result.reason),
             },
             new Date().toISOString(),
-          );
-
-    const fallbackCap =
-      fallback.status === "fulfilled"
-        ? fallback.value
-        : normalizeCapabilities(
-            {
-              available: false,
-              authenticated: false,
-              backend: this.fallback.id,
-              capabilities: [],
-              message: fallback.reason instanceof LinkedInProviderError ? fallback.reason.message : String(fallback.reason),
-            },
-            new Date().toISOString(),
-          );
-
-    return mergeCapabilities(primaryCap, fallbackCap);
+          ),
+    );
+    return mergeCapabilities(reports);
   }
 
   async getCapabilities(): Promise<ProviderCapabilities> {
@@ -80,16 +80,12 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
 
   private async trySearch<T extends AnyResult>(
     type: SearchType,
-    args: ProviderSearchArgs,
+    _args: ProviderSearchArgs,
     runner: (p: LinkedInProvider) => Promise<ProviderSearchResult<T>>,
   ): Promise<ProviderSearchResult<T> & { provider: string }> {
-    const providers: ProviderEntry[] = [
-      { provider: this.primary, tried: false },
-      { provider: this.fallback, tried: false },
-    ];
+    const entries: ProviderEntry[] = this.ordered(type).map((provider) => ({ provider }));
 
-    for (const entry of providers) {
-      entry.tried = true;
+    for (const entry of entries) {
       try {
         const capabilities = await entry.provider.getCapabilities();
         if (!capabilities.available || !capabilities.capabilities.includes(capabilityForType(type))) {
@@ -115,10 +111,9 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
       }
     }
 
-    // Both providers failed with availability/unsupported; surface the last error.
-    const lastError = providers[providers.length - 1]?.error;
+    const lastError = entries[entries.length - 1]?.error;
     if (lastError) throw lastError;
-    throw PROVIDER_ERRORS.unavailable("No LinkedIn backend is available.");
+    throw PROVIDER_ERRORS.unavailable("No research backend is available.");
   }
 
   searchPeople(args: ProviderSearchArgs): Promise<ProviderSearchResult<PersonResult> & { provider: string }> {
@@ -134,7 +129,7 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
   }
 
   async getProfile(profileUrl: string): Promise<PersonResult> {
-    for (const provider of [this.primary, this.fallback]) {
+    for (const provider of this.ordered("people")) {
       try {
         return await provider.getProfile(profileUrl);
       } catch (error) {
@@ -153,33 +148,32 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
   }
 }
 
-function mergeCapabilities(primary: ProviderCapabilities, fallback: ProviderCapabilities): ProviderCapabilities {
-  const allCapabilities = Array.from(new Set([...primary.capabilities, ...fallback.capabilities]));
+function mergeCapabilities(reports: ProviderCapabilities[]): ProviderCapabilities {
+  const allCapabilities = Array.from(new Set(reports.flatMap((r) => r.capabilities)));
   const supportedFilters: ProviderCapabilities["supported_filters"] = {};
   for (const type of ["people", "companies", "jobs"] as SearchType[]) {
     const set = new Set<FilterKey>();
-    (primary.supported_filters[type] ?? []).forEach((k) => set.add(k));
-    (fallback.supported_filters[type] ?? []).forEach((k) => set.add(k));
+    reports.forEach((r) => (r.supported_filters[type] ?? []).forEach((k) => set.add(k)));
     if (set.size) supportedFilters[type] = Array.from(set);
   }
 
-  const available = primary.available || fallback.available;
+  const available = reports.some((r) => r.available);
   const state: ProviderCapabilities["state"] = available
     ? "READY"
-    : primary.state === "AUTH_REQUIRED" || fallback.state === "AUTH_REQUIRED"
+    : reports.some((r) => r.state === "AUTH_REQUIRED")
       ? "AUTH_REQUIRED"
-      : primary.state;
+      : (reports[0]?.state ?? "BACKEND_UNAVAILABLE");
 
   return {
     available,
     state,
-    backend: primary.backend ?? fallback.backend,
-    agent_reach_installed: fallback.agent_reach_installed,
-    agent_reach_version: fallback.agent_reach_version,
-    authenticated: primary.authenticated || fallback.authenticated,
+    backend: reports.find((r) => r.available)?.backend ?? reports[0]?.backend ?? null,
+    agent_reach_installed: reports.some((r) => r.agent_reach_installed),
+    agent_reach_version: reports.find((r) => r.agent_reach_version)?.agent_reach_version ?? null,
+    authenticated: reports.some((r) => r.authenticated),
     capabilities: allCapabilities as ProviderCapabilities["capabilities"],
     supported_filters: supportedFilters,
-    message: [primary.message, fallback.message].filter(Boolean).join(" | "),
+    message: reports.map((r) => r.message).filter(Boolean).join(" | "),
     checked_at: new Date().toISOString(),
   };
 }

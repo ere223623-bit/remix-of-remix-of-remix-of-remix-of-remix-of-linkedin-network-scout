@@ -2,40 +2,62 @@ import {
   AgentReachLinkedInProvider,
   readAgentReachConfig,
 } from "./agent-reach-provider.server";
+import { ApolloResearchProvider, readApolloConfig } from "./apollo-provider.server";
 import { CompositeLinkedInProvider } from "./composite-provider.server";
 import { LovableLinkedInProvider, readLovableLinkedInConfig } from "./lovable-provider.server";
 import { PROVIDER_ERRORS } from "./provider";
 import type { LinkedInProvider, ProviderSearchArgs, ProviderSearchResult } from "./provider";
 import type { PersonResult, CompanyResult, JobResult, ProviderCapabilities } from "./types";
 
-/** The two concrete providers, built independently for diagnostics. */
-export function createProviderPair(): { primary: LinkedInProvider; fallback: LinkedInProvider } {
-  let primary: LinkedInProvider;
+export type ProviderId = "lovable-linkedin" | "apollo" | "agent-reach";
+
+export type ProviderSet = {
+  linkedInConnector: LinkedInProvider;
+  apollo: LinkedInProvider;
+  agentReach: LinkedInProvider;
+};
+
+/** All concrete providers, built independently so diagnostics can report each. */
+export function createProviderSet(): ProviderSet {
+  let linkedInConnector: LinkedInProvider;
   try {
-    primary = new LovableLinkedInProvider(readLovableLinkedInConfig());
+    linkedInConnector = new LovableLinkedInProvider(readLovableLinkedInConfig());
   } catch (error) {
-    primary = new UnconfiguredProvider(
+    linkedInConnector = new UnconfiguredProvider(
       "lovable-linkedin",
       "Lovable LinkedIn connector (not configured)",
       error,
     );
   }
 
-  // Agent Reach may be unconfigured; in that case we still create it but health
-  // checks will report unavailable. This keeps the composite selector simple.
-  let fallback: LinkedInProvider;
+  let apollo: LinkedInProvider;
   try {
-    fallback = new AgentReachLinkedInProvider(readAgentReachConfig());
-  } catch {
-    fallback = new UnconfiguredAgentReachProvider();
+    apollo = new ApolloResearchProvider(readApolloConfig());
+  } catch (error) {
+    apollo = new UnconfiguredProvider("apollo", "Apollo professional data (not connected)", error);
   }
 
-  return { primary, fallback };
+  // Agent Reach may be unconfigured; in that case we still create it but health
+  // checks will report unavailable. This keeps the composite selector simple.
+  let agentReach: LinkedInProvider;
+  try {
+    agentReach = new AgentReachLinkedInProvider(readAgentReachConfig());
+  } catch {
+    agentReach = new UnconfiguredAgentReachProvider();
+  }
+
+  return { linkedInConnector, apollo, agentReach };
+}
+
+/** Kept for callers that only need the two LinkedIn-sourced backends. */
+export function createProviderPair(): { primary: LinkedInProvider; fallback: LinkedInProvider } {
+  const { linkedInConnector, agentReach } = createProviderSet();
+  return { primary: linkedInConnector, fallback: agentReach };
 }
 
 export function createLinkedInProvider(): LinkedInProvider {
-  const { primary, fallback } = createProviderPair();
-  return new CompositeLinkedInProvider(primary, fallback);
+  const { linkedInConnector, apollo, agentReach } = createProviderSet();
+  return new CompositeLinkedInProvider(linkedInConnector, apollo, agentReach);
 }
 
 class UnconfiguredProvider implements LinkedInProvider {

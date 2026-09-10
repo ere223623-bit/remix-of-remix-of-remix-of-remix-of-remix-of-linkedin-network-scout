@@ -9,8 +9,20 @@ import {
   saveLinkedInProfile,
   getLinkedInSearchHistory,
 } from "@/lib/linkedin/linkedin.functions";
-import { FILTER_LABELS, type FilterKey, type SearchType } from "@/lib/linkedin/types";
-import type { AnyResult, PersonResult, CompanyResult, JobResult } from "@/lib/linkedin/types";
+import {
+  FILTER_LABELS,
+  SOURCE_LABELS,
+  type FilterKey,
+  type SearchType,
+} from "@/lib/linkedin/types";
+import type {
+  AnyResult,
+  PersonResult,
+  CompanyResult,
+  JobResult,
+  ProviderCapabilities,
+} from "@/lib/linkedin/types";
+import { deriveIntegrationStatus } from "@/lib/linkedin/status";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
