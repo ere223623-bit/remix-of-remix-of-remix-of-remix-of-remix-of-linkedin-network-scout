@@ -8,26 +8,26 @@ import {
   assertSearchable,
 } from "./schemas";
 import { checkRateLimit, SEARCH_RATE_LIMIT } from "./rate-limit.server";
-import { LinkedInProviderError } from "./provider";
+import { LinkedInProviderError, PROVIDER_ERRORS } from "./provider";
+import {
+  integrationEventFor,
+  resultRowsFor,
+  savedProfileRowFor,
+  searchRowFor,
+} from "./persistence";
 import {
   diagnosticsFromCapabilities,
   diagnosticsFromError,
   type DiagnosticsResponse,
 } from "./diagnostics";
-import type {
-  AnyResult,
-  ApiErrorResponse,
-  SearchResponse,
-  ProviderCapabilities,
-} from "./types";
+import type { AnyResult, ApiErrorResponse, SearchResponse, ProviderCapabilities } from "./types";
 
 function toJson(value: unknown): Json {
   return JSON.parse(JSON.stringify(value ?? null)) as Json;
 }
 
 export type StatusResponse =
-  | { success: true; capabilities: ProviderCapabilities }
-  | ApiErrorResponse;
+  { success: true; capabilities: ProviderCapabilities } | ApiErrorResponse;
 
 export type SearchFnResponse = SearchResponse<AnyResult> | ApiErrorResponse;
 
@@ -40,7 +40,7 @@ function errorResponse(error: LinkedInProviderError): ApiErrorResponse {
 
 function recordError(
   error: LinkedInProviderError | Error,
-  type: "people" | "companies" | "jobs",
+  _type: "people" | "companies" | "jobs",
 ): SearchFnResponse {
   const providerErr =
     error instanceof LinkedInProviderError
@@ -48,7 +48,7 @@ function recordError(
       : new LinkedInProviderError(
           "LINKEDIN_BACKEND_UNAVAILABLE",
           "BACKEND_UNAVAILABLE",
-          error instanceof Error ? error.message : String(error),
+          "The LinkedIn backend failed unexpectedly.",
         );
   return errorResponse(providerErr);
 }
@@ -61,13 +61,15 @@ export const getLinkedInStatus = createServerFn({ method: "GET" })
       const { createLinkedInProvider } = await import("./factory.server");
       const provider = createLinkedInProvider();
       const capabilities = await provider.getCapabilities();
-      await context.supabase.from("linkedin_integration_events").insert({
-        kind: "health_check",
-        status: capabilities.available ? "success" : "unavailable",
-        backend: capabilities.backend,
-        detail: { provider: provider.id, capabilities },
-        duration_ms: Math.round(performance.now() - start),
-      });
+      await context.supabase.from("linkedin_integration_events").insert(
+        integrationEventFor(context.userId, {
+          kind: "health_check",
+          status: capabilities.available ? "success" : "unavailable",
+          backend: capabilities.backend,
+          detail: { provider: provider.id, capabilities },
+          duration_ms: Math.round(performance.now() - start),
+        }),
+      );
       return { success: true, capabilities };
     } catch (error) {
       const providerErr =
@@ -76,22 +78,24 @@ export const getLinkedInStatus = createServerFn({ method: "GET" })
           : new LinkedInProviderError(
               "LINKEDIN_BACKEND_UNAVAILABLE",
               "BACKEND_UNAVAILABLE",
-              error instanceof Error ? error.message : String(error),
+              "The LinkedIn backend failed unexpectedly.",
             );
-      await context.supabase.from("linkedin_integration_events").insert({
-        kind: "health_check",
-        status: "error",
-        backend: null,
-        detail: { error: providerErr.message, code: providerErr.code },
-        duration_ms: Math.round(performance.now() - start),
-      });
+      await context.supabase.from("linkedin_integration_events").insert(
+        integrationEventFor(context.userId, {
+          kind: "health_check",
+          status: "error",
+          backend: null,
+          detail: { error: providerErr.message, code: providerErr.code },
+          duration_ms: Math.round(performance.now() - start),
+        }),
+      );
       return errorResponse(providerErr);
     }
   });
 
 export const searchLinkedIn = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => searchRequestSchema.parse(input))
+  .validator((input: unknown) => searchRequestSchema.parse(input))
   .handler(async ({ data, context }): Promise<SearchFnResponse> => {
     if (!assertSearchable(data)) {
       return {
@@ -127,7 +131,15 @@ export const searchLinkedIn = createServerFn({ method: "POST" })
       const provider = createLinkedInProvider();
 
       let result:
-        | { results: AnyResult[]; backend: string | null; retrieved_at: string; provider?: string }
+        | {
+            results: AnyResult[];
+            backend: string | null;
+            retrieved_at: string;
+            retrievedAt: string;
+            provider: string;
+            source: AnyResult["source"];
+            isLinkedInSourced: boolean;
+          }
         | undefined;
       if (data.type === "people") {
         result = await provider.searchPeople(data);
@@ -138,16 +150,7 @@ export const searchLinkedIn = createServerFn({ method: "POST" })
       }
 
       const durationMs = Math.round(performance.now() - start);
-      const searchRow = {
-        user_id: context.userId,
-        search_type: data.type,
-        query: data.query,
-        filters: data.filters,
-        result_count: result.results.length,
-        backend: result.backend,
-        status: "READY" as const,
-        duration_ms: durationMs,
-      };
+      const searchRow = searchRowFor(context.userId, data, result, durationMs);
 
       const { data: inserted, error: insertError } = await context.supabase
         .from("linkedin_searches")
@@ -160,26 +163,22 @@ export const searchLinkedIn = createServerFn({ method: "POST" })
       }
 
       if (inserted && result.results.length > 0) {
-        const resultRows = result.results.map((r) => ({
-          user_id: context.userId,
-          search_id: inserted.id,
-          result_type: data.type,
-          payload: toJson(r),
-          source: r.source,
-          backend: result!.backend,
-          retrieved_at: r.retrieved_at,
-        }));
-        const { error: resultsError } = await context.supabase.from("linkedin_results").insert(resultRows);
+        const resultRows = resultRowsFor(context.userId, inserted.id, data.type, result, toJson);
+        const { error: resultsError } = await context.supabase
+          .from("linkedin_results")
+          .insert(resultRows);
         if (resultsError) console.error("Failed to record results:", resultsError);
       }
 
-      await context.supabase.from("linkedin_integration_events").insert({
-        kind: "search",
-        status: "success",
-        backend: result.backend,
-        detail: { provider: result.provider, type: data.type, count: result.results.length },
-        duration_ms: durationMs,
-      });
+      await context.supabase.from("linkedin_integration_events").insert(
+        integrationEventFor(context.userId, {
+          kind: "search",
+          status: "success",
+          backend: result.backend,
+          detail: { provider: result.provider, type: data.type, count: result.results.length },
+          duration_ms: durationMs,
+        }),
+      );
 
       return {
         success: true,
@@ -187,26 +186,32 @@ export const searchLinkedIn = createServerFn({ method: "POST" })
         results: result.results,
         count: result.results.length,
         backend: result.backend,
+        provider: result.provider,
+        source: result.source,
+        isLinkedInSourced: result.isLinkedInSourced,
+        retrievedAt: result.retrievedAt,
         retrieved_at: result.retrieved_at,
       };
     } catch (error) {
       const response = recordError(error as Error, data.type);
       const errorMessage = !response.success ? response.error.message : "Unknown error";
       const errorCode = !response.success ? response.error.code : "LINKEDIN_BACKEND_UNAVAILABLE";
-      await context.supabase.from("linkedin_integration_events").insert({
-        kind: "search",
-        status: "error",
-        backend: null,
-        detail: { error: errorMessage, code: errorCode, type: data.type },
-        duration_ms: Math.round(performance.now() - start),
-      });
+      await context.supabase.from("linkedin_integration_events").insert(
+        integrationEventFor(context.userId, {
+          kind: "search",
+          status: "error",
+          backend: null,
+          detail: { error: errorMessage, code: errorCode, type: data.type },
+          duration_ms: Math.round(performance.now() - start),
+        }),
+      );
       return response;
     }
   });
 
 export const getLinkedInProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => profileRequestSchema.parse(input))
+  .validator((input: unknown) => profileRequestSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { createLinkedInProvider } = await import("./factory.server");
     const provider = createLinkedInProvider();
@@ -220,22 +225,9 @@ export const getLinkedInProfile = createServerFn({ method: "POST" })
 
 export const saveLinkedInProfile = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: unknown) => savedProfileInputSchema.parse(input))
+  .validator((input: unknown) => savedProfileInputSchema.parse(input))
   .handler(async ({ data, context }) => {
-    const row = {
-      user_id: context.userId,
-      profile_url: data.profile_url,
-      name: data.name,
-      headline: data.headline,
-      job_title: data.job_title,
-      company: data.company,
-      location: data.location,
-      payload: toJson(data.payload),
-      notes: data.notes,
-      tags: data.tags,
-      favorite: data.favorite,
-      retrieved_at: data.retrieved_at,
-    };
+    const row = savedProfileRowFor(context.userId, data, toJson);
 
     const { error } = await context.supabase.from("linkedin_saved_profiles").insert(row);
 
@@ -252,7 +244,10 @@ export const getLinkedInSearchHistory = createServerFn({ method: "GET" })
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("linkedin_searches")
-      .select("id, search_type, query, filters, result_count, backend, status, created_at")
+      .select(
+        "id, search_type, query, filters, result_count, backend, provider, source, is_linkedin_sourced, status, created_at",
+      )
+      .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
       .limit(50);
 
@@ -270,6 +265,13 @@ export const getLinkedInSearchHistory = createServerFn({ method: "GET" })
 export const getLinkedInDiagnostics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<DiagnosticsResponse> => {
+    const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleError || !isAdmin) {
+      throw PROVIDER_ERRORS.permissionDenied("Administrator access is required for diagnostics.");
+    }
     const { createProviderSet } = await import("./factory.server");
     const { linkedInConnector, apollo, agentReach } = createProviderSet();
 
@@ -337,7 +339,8 @@ export const getLinkedInDiagnostics = createServerFn({ method: "GET" })
         const detail = lastError?.detail as { code?: string; error?: string } | null;
         if (lastError && detail?.error) {
           report.last_error = {
-            code: (detail.code as ApiErrorResponse["error"]["code"]) ?? "LINKEDIN_BACKEND_UNAVAILABLE",
+            code:
+              (detail.code as ApiErrorResponse["error"]["code"]) ?? "LINKEDIN_BACKEND_UNAVAILABLE",
             message: detail.error,
           };
         }

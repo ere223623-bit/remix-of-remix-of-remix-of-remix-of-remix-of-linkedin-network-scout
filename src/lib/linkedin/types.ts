@@ -16,15 +16,15 @@ export const SOURCE_LABELS: Record<DataSource, string> = {
   apify: "Apify",
 };
 
-export type Capability =
-  | "profile_search"
-  | "company_search"
-  | "job_search"
-  | "profile_detail";
+export type Capability = "profile_search" | "company_search" | "job_search" | "profile_detail";
 
 export type IntegrationState =
   | "READY"
   | "AUTH_REQUIRED"
+  | "PERMISSION_DENIED"
+  | "ACCOUNT_RESTRICTED"
+  | "CAPABILITY_UNSUPPORTED"
+  | "INVALID_RESPONSE"
   | "BACKEND_UNAVAILABLE"
   | "RATE_LIMITED"
   | "TIMEOUT"
@@ -32,6 +32,9 @@ export type IntegrationState =
 
 export type ErrorCode =
   | "LINKEDIN_AUTH_REQUIRED"
+  | "LINKEDIN_PERMISSION_DENIED"
+  | "LINKEDIN_ACCOUNT_RESTRICTED"
+  | "LINKEDIN_CAPABILITY_UNSUPPORTED"
   | "LINKEDIN_BACKEND_UNAVAILABLE"
   | "LINKEDIN_RATE_LIMITED"
   | "LINKEDIN_TIMEOUT"
@@ -116,6 +119,9 @@ export type PersonResult = {
   education: EducationEntry[] | null;
   experience: ExperienceEntry[] | null;
   source: DataSource;
+  provider: string;
+  isLinkedInSourced: boolean;
+  retrievedAt: string;
   retrieved_at: string;
 };
 
@@ -128,6 +134,9 @@ export type CompanyResult = {
   linkedin_url: string | null;
   website: string | null;
   source: DataSource;
+  provider: string;
+  isLinkedInSourced: boolean;
+  retrievedAt: string;
   retrieved_at: string;
 };
 
@@ -140,6 +149,9 @@ export type JobResult = {
   linkedin_url: string | null;
   published_at: string | null;
   source: DataSource;
+  provider: string;
+  isLinkedInSourced: boolean;
+  retrievedAt: string;
   retrieved_at: string;
 };
 
@@ -164,6 +176,10 @@ export type SearchResponse<T extends AnyResult = AnyResult> = {
   results: T[];
   count: number;
   backend: string | null;
+  provider: string;
+  source: DataSource;
+  isLinkedInSourced: boolean;
+  retrievedAt: string;
   retrieved_at: string;
 };
 

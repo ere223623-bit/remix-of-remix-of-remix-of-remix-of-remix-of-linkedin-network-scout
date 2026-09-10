@@ -65,6 +65,8 @@ export function readLovableLinkedInConfig(
 export class LovableLinkedInProvider implements LinkedInProvider {
   readonly id = "lovable-linkedin";
   readonly label = "Lovable LinkedIn";
+  readonly source = "linkedin" as const;
+  readonly isLinkedInSourced = true;
   private readonly config: LovableLinkedInConfig;
   private readonly doFetch: typeof fetch;
   private capabilityCache: { value: ProviderCapabilities; at: number } | undefined;
@@ -111,7 +113,8 @@ export class LovableLinkedInProvider implements LinkedInProvider {
       throw PROVIDER_ERRORS.invalidResponse();
     }
 
-    if (response.status === 401 || response.status === 403) throw PROVIDER_ERRORS.authRequired();
+    if (response.status === 401) throw PROVIDER_ERRORS.authRequired();
+    if (response.status === 403) throw PROVIDER_ERRORS.permissionDenied();
     if (response.status === 429) throw PROVIDER_ERRORS.rateLimited();
     if (response.status === 504 || response.status === 408) throw PROVIDER_ERRORS.timeout();
 
@@ -126,7 +129,9 @@ export class LovableLinkedInProvider implements LinkedInProvider {
     const res = await this.rawRequest(path);
     // 2xx = supported; 404 from the virtual-resource layer = not supported.
     if (res.status === 404) return false;
-    if (res.status === 403) return false;
+    if (res.status === 401) throw PROVIDER_ERRORS.authRequired();
+    if (res.status === 403) throw PROVIDER_ERRORS.permissionDenied();
+    if (res.status === 429) throw PROVIDER_ERRORS.rateLimited();
     return res.ok;
   }
 
@@ -214,8 +219,18 @@ export class LovableLinkedInProvider implements LinkedInProvider {
     const retrievedAt = new Date().toISOString();
 
     return {
-      results: normalizeResults(type, payload["elements"] ?? payload["results"], retrievedAt) as T[],
+      results: normalizeResults(
+        type,
+        payload["elements"] ?? payload["results"],
+        retrievedAt,
+        this.source,
+        this.id,
+      ) as T[],
       backend: capabilities.backend,
+      provider: this.id,
+      source: this.source,
+      isLinkedInSourced: this.isLinkedInSourced,
+      retrievedAt,
       retrieved_at: retrievedAt,
     };
   }
@@ -253,7 +268,13 @@ export class LovableLinkedInProvider implements LinkedInProvider {
         ? (payload["elements"][0] as Record<string, unknown>)
         : payload;
     if (typeof raw !== "object" || raw === null) throw PROVIDER_ERRORS.invalidResponse();
-    return normalizePerson(raw as Record<string, unknown>, new Date().toISOString());
+    return normalizePerson(
+      raw as Record<string, unknown>,
+      new Date().toISOString(),
+      0,
+      this.source,
+      this.id,
+    );
   }
 }
 
@@ -272,9 +293,12 @@ function mapGatewayError(payload: unknown, status: number): LinkedInProviderErro
     return PROVIDER_ERRORS.rateLimited(message);
   }
   if (code === "ACCESS_DENIED" || code === "FORBIDDEN") {
-    return PROVIDER_ERRORS.unavailable(
+    return PROVIDER_ERRORS.permissionDenied(
       "This LinkedIn connection does not have permission for the requested operation.",
     );
+  }
+  if (code === "ACCOUNT_RESTRICTED" || code === "ACCOUNT_LOCKED") {
+    return PROVIDER_ERRORS.accountRestricted();
   }
 
   return PROVIDER_ERRORS.unavailable(

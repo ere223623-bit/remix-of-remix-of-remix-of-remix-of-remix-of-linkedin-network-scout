@@ -1,4 +1,4 @@
-import { capabilityForType, normalizeCapabilities } from "./normalize";
+import { capabilityForType, normalizeCapabilities, pruneUnsupportedFilters } from "./normalize";
 import {
   LinkedInProviderError,
   PROVIDER_ERRORS,
@@ -25,10 +25,18 @@ type ProviderEntry = { provider: LinkedInProvider; error?: LinkedInProviderError
  * backends — Apollo has no job-posting search and never pretends otherwise.
  */
 const ROUTING: Record<SearchType, string[]> = {
-  people: ["apollo", "lovable-linkedin", "agent-reach"],
-  companies: ["apollo", "lovable-linkedin", "agent-reach"],
-  jobs: ["lovable-linkedin", "agent-reach", "apollo"],
+  people: ["lovable-linkedin", "agent-reach"],
+  companies: ["lovable-linkedin", "agent-reach"],
+  jobs: ["lovable-linkedin", "agent-reach"],
 };
+
+const TERMINAL_ERROR_CODES = new Set([
+  "LINKEDIN_AUTH_REQUIRED",
+  "LINKEDIN_PERMISSION_DENIED",
+  "LINKEDIN_ACCOUNT_RESTRICTED",
+  "LINKEDIN_RATE_LIMITED",
+  "LINKEDIN_CONFIGURATION_ERROR",
+]);
 
 /**
  * Orchestrates every configured research provider. Errors that mean a provider
@@ -37,11 +45,15 @@ const ROUTING: Record<SearchType, string[]> = {
  */
 export class CompositeLinkedInProvider implements LinkedInProvider {
   readonly id = "composite";
-  readonly label = "Research (auto)";
+  readonly label = "LinkedIn search (auto)";
+  readonly source = "linkedin" as const;
+  readonly isLinkedInSourced = true;
   private readonly providers: LinkedInProvider[];
 
   constructor(...providers: LinkedInProvider[]) {
-    this.providers = providers.flat();
+    this.providers = providers
+      .flat()
+      .filter((provider) => provider.isLinkedInSourced && provider.configured !== false);
   }
 
   private ordered(type: SearchType): LinkedInProvider[] {
@@ -80,65 +92,107 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
 
   private async trySearch<T extends AnyResult>(
     type: SearchType,
-    _args: ProviderSearchArgs,
-    runner: (p: LinkedInProvider) => Promise<ProviderSearchResult<T>>,
+    args: ProviderSearchArgs,
+    runner: (p: LinkedInProvider, args: ProviderSearchArgs) => Promise<ProviderSearchResult<T>>,
   ): Promise<ProviderSearchResult<T> & { provider: string }> {
     const entries: ProviderEntry[] = this.ordered(type).map((provider) => ({ provider }));
 
     for (const entry of entries) {
       try {
         const capabilities = await entry.provider.getCapabilities();
-        if (!capabilities.available || !capabilities.capabilities.includes(capabilityForType(type))) {
+        if (
+          !capabilities.available ||
+          !capabilities.capabilities.includes(capabilityForType(type))
+        ) {
           entry.error = PROVIDER_ERRORS.unsupported(type);
           continue;
         }
-        const result = await runner(entry.provider);
-        return { ...result, provider: entry.provider.id };
+        const filteredArgs = {
+          ...args,
+          filters: pruneUnsupportedFilters(args.filters, capabilities.supported_filters[type]),
+        };
+        const result = await runner(entry.provider, filteredArgs);
+        if (
+          !result ||
+          !Array.isArray(result.results) ||
+          typeof result.retrieved_at !== "string" ||
+          Number.isNaN(Date.parse(result.retrieved_at))
+        ) {
+          throw PROVIDER_ERRORS.invalidResponse();
+        }
+        const retrievedAt = result.retrieved_at;
+        return {
+          ...result,
+          results: result.results.map((item) => ({
+            ...item,
+            source: entry.provider.source,
+            provider: entry.provider.id,
+            isLinkedInSourced: entry.provider.isLinkedInSourced,
+            retrievedAt,
+            retrieved_at: retrievedAt,
+          })),
+          provider: entry.provider.id,
+          source: entry.provider.source,
+          isLinkedInSourced: entry.provider.isLinkedInSourced,
+          retrievedAt,
+        };
       } catch (error) {
         entry.error =
-          error instanceof LinkedInProviderError
-            ? error
-            : PROVIDER_ERRORS.unavailable(error instanceof Error ? error.message : String(error));
+          error instanceof LinkedInProviderError ? error : PROVIDER_ERRORS.unavailable();
 
         // Auth, rate-limit, and configuration errors are not fallback reasons.
-        if (
-          entry.error.code === "LINKEDIN_AUTH_REQUIRED" ||
-          entry.error.code === "LINKEDIN_RATE_LIMITED" ||
-          entry.error.code === "LINKEDIN_CONFIGURATION_ERROR"
-        ) {
+        if (TERMINAL_ERROR_CODES.has(entry.error.code)) {
           throw entry.error;
         }
       }
     }
 
     const lastError = entries[entries.length - 1]?.error;
-    if (lastError) throw lastError;
+    if (lastError?.code === "LINKEDIN_TIMEOUT") throw PROVIDER_ERRORS.timeout();
+    if (lastError?.code === "LINKEDIN_INVALID_RESPONSE") throw PROVIDER_ERRORS.invalidResponse();
+    if (lastError?.code === "LINKEDIN_CAPABILITY_UNSUPPORTED") {
+      throw PROVIDER_ERRORS.unsupported(type);
+    }
+    if (lastError) throw PROVIDER_ERRORS.unavailable();
     throw PROVIDER_ERRORS.unavailable("No research backend is available.");
   }
 
-  searchPeople(args: ProviderSearchArgs): Promise<ProviderSearchResult<PersonResult> & { provider: string }> {
-    return this.trySearch<PersonResult>("people", args, (p) => p.searchPeople(args));
+  searchPeople(
+    args: ProviderSearchArgs,
+  ): Promise<ProviderSearchResult<PersonResult> & { provider: string }> {
+    return this.trySearch<PersonResult>("people", args, (p, forwarded) =>
+      p.searchPeople(forwarded),
+    );
   }
 
-  searchCompanies(args: ProviderSearchArgs): Promise<ProviderSearchResult<CompanyResult> & { provider: string }> {
-    return this.trySearch<CompanyResult>("companies", args, (p) => p.searchCompanies(args));
+  searchCompanies(
+    args: ProviderSearchArgs,
+  ): Promise<ProviderSearchResult<CompanyResult> & { provider: string }> {
+    return this.trySearch<CompanyResult>("companies", args, (p, forwarded) =>
+      p.searchCompanies(forwarded),
+    );
   }
 
-  searchJobs(args: ProviderSearchArgs): Promise<ProviderSearchResult<JobResult> & { provider: string }> {
-    return this.trySearch<JobResult>("jobs", args, (p) => p.searchJobs(args));
+  searchJobs(
+    args: ProviderSearchArgs,
+  ): Promise<ProviderSearchResult<JobResult> & { provider: string }> {
+    return this.trySearch<JobResult>("jobs", args, (p, forwarded) => p.searchJobs(forwarded));
   }
 
   async getProfile(profileUrl: string): Promise<PersonResult> {
     for (const provider of this.ordered("people")) {
       try {
-        return await provider.getProfile(profileUrl);
+        const profile = await provider.getProfile(profileUrl);
+        return {
+          ...profile,
+          source: provider.source,
+          provider: provider.id,
+          isLinkedInSourced: provider.isLinkedInSourced,
+          retrievedAt: profile.retrieved_at,
+        };
       } catch (error) {
         if (error instanceof LinkedInProviderError) {
-          if (
-            error.code === "LINKEDIN_AUTH_REQUIRED" ||
-            error.code === "LINKEDIN_RATE_LIMITED" ||
-            error.code === "LINKEDIN_CONFIGURATION_ERROR"
-          ) {
+          if (TERMINAL_ERROR_CODES.has(error.code)) {
             throw error;
           }
         }
@@ -173,7 +227,10 @@ function mergeCapabilities(reports: ProviderCapabilities[]): ProviderCapabilitie
     authenticated: reports.some((r) => r.authenticated),
     capabilities: allCapabilities as ProviderCapabilities["capabilities"],
     supported_filters: supportedFilters,
-    message: reports.map((r) => r.message).filter(Boolean).join(" | "),
+    message: reports
+      .map((r) => r.message)
+      .filter(Boolean)
+      .join(" | "),
     checked_at: new Date().toISOString(),
   };
 }

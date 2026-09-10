@@ -49,6 +49,9 @@ export const savedProfileInputSchema = z.object({
   notes: z.string().trim().max(4000).nullable().default(null),
   tags: z.array(z.string().trim().min(1).max(40)).max(20).default([]),
   favorite: z.boolean().default(false),
+  provider: z.string().trim().min(1).max(100),
+  source: z.enum(["linkedin", "apollo", "apify"]),
+  isLinkedInSourced: z.boolean(),
   retrieved_at: z.string().nullable().default(null),
 });
 

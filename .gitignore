@@ -16,6 +16,11 @@ dist-ssr
 .nitro
 *.local
 
+# Root application environment (examples stay tracked)
+.env
+.env.*
+!.env.example
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
@@ -35,12 +40,14 @@ dist-ssr
 services/linkedin-agent-reach/.env
 services/linkedin-agent-reach/.env.*
 !services/linkedin-agent-reach/.env.example
-.env.local
-.env.*.local
 services/linkedin-agent-reach/data/
 services/linkedin-agent-reach/**/linkedin-profile/
 services/linkedin-agent-reach/**/*-session/
 **/linkedin-session/
+**/linkedin-profile/
+**/*-session/
+**/li_at*
+**/JSESSIONID*
 # Tunnel + local runtime artifacts
 .cloudflared/
 cloudflared*.log

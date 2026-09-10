@@ -55,6 +55,8 @@ export function readAgentReachConfig(
 export class AgentReachLinkedInProvider implements LinkedInProvider {
   readonly id = "agent-reach";
   readonly label = "Agent Reach sidecar";
+  readonly source = "linkedin" as const;
+  readonly isLinkedInSourced = true;
   private readonly config: AgentReachConfig;
   private readonly doFetch: typeof fetch;
   private capabilityCache: { value: ProviderCapabilities; at: number } | undefined;
@@ -85,7 +87,8 @@ export class AgentReachLinkedInProvider implements LinkedInProvider {
       clearTimeout(timer);
     }
 
-    if (response.status === 401 || response.status === 403) throw PROVIDER_ERRORS.authRequired();
+    if (response.status === 401) throw PROVIDER_ERRORS.authRequired();
+    if (response.status === 403) throw PROVIDER_ERRORS.permissionDenied();
     if (response.status === 429) throw PROVIDER_ERRORS.rateLimited();
     if (response.status === 504 || response.status === 408) throw PROVIDER_ERRORS.timeout();
 
@@ -151,11 +154,21 @@ export class AgentReachLinkedInProvider implements LinkedInProvider {
         : new Date().toISOString();
 
     return {
-      results: normalizeResults(type, payload["results"], retrievedAt) as never[],
+      results: normalizeResults(
+        type,
+        payload["results"],
+        retrievedAt,
+        this.source,
+        this.id,
+      ) as never[],
       backend:
         typeof payload["backend"] === "string"
           ? (payload["backend"] as string)
           : capabilities.backend,
+      provider: this.id,
+      source: this.source,
+      isLinkedInSourced: this.isLinkedInSourced,
+      retrievedAt,
       retrieved_at: retrievedAt,
     };
   }
@@ -187,20 +200,24 @@ export class AgentReachLinkedInProvider implements LinkedInProvider {
       typeof payload["retrieved_at"] === "string"
         ? (payload["retrieved_at"] as string)
         : new Date().toISOString();
-    return normalizePerson(raw as Record<string, unknown>, retrievedAt);
+    return normalizePerson(raw as Record<string, unknown>, retrievedAt, 0, this.source, this.id);
   }
 }
 
 function mapServiceError(payload: unknown, status: number): LinkedInProviderError {
   const code =
     typeof payload === "object" && payload !== null
-      ? (payload as { error?: { code?: unknown }; code?: unknown }).error?.code ??
-        (payload as { code?: unknown }).code
+      ? ((payload as { error?: { code?: unknown }; code?: unknown }).error?.code ??
+        (payload as { code?: unknown }).code)
       : undefined;
 
   switch (code) {
     case "LINKEDIN_AUTH_REQUIRED":
       return PROVIDER_ERRORS.authRequired();
+    case "LINKEDIN_PERMISSION_DENIED":
+      return PROVIDER_ERRORS.permissionDenied();
+    case "LINKEDIN_ACCOUNT_RESTRICTED":
+      return PROVIDER_ERRORS.accountRestricted();
     case "LINKEDIN_RATE_LIMITED":
       return PROVIDER_ERRORS.rateLimited();
     case "LINKEDIN_TIMEOUT":

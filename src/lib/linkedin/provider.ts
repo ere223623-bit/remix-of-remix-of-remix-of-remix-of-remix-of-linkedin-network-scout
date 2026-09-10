@@ -1,5 +1,6 @@
 import type {
   CompanyResult,
+  DataSource,
   ErrorCode,
   IntegrationState,
   JobResult,
@@ -27,6 +28,14 @@ export const PROVIDER_ERRORS = {
       "AUTH_REQUIRED",
       "The LinkedIn backend is not authenticated. An administrator must complete the LinkedIn login on the search service host.",
     ),
+  permissionDenied: (detail = "The connected account does not permit this LinkedIn operation.") =>
+    new LinkedInProviderError("LINKEDIN_PERMISSION_DENIED", "PERMISSION_DENIED", detail),
+  accountRestricted: () =>
+    new LinkedInProviderError(
+      "LINKEDIN_ACCOUNT_RESTRICTED",
+      "ACCOUNT_RESTRICTED",
+      "LinkedIn has restricted this account. Resolve the restriction before searching again.",
+    ),
   unavailable: (detail = "The LinkedIn backend is not reachable.") =>
     new LinkedInProviderError("LINKEDIN_BACKEND_UNAVAILABLE", "BACKEND_UNAVAILABLE", detail),
   rateLimited: (detail = "Too many LinkedIn requests. Try again shortly.") =>
@@ -40,11 +49,11 @@ export const PROVIDER_ERRORS = {
   configuration: (detail: string) =>
     new LinkedInProviderError("LINKEDIN_CONFIGURATION_ERROR", "CONFIGURATION_ERROR", detail),
   invalidResponse: (detail = "The LinkedIn backend returned a response this app cannot read.") =>
-    new LinkedInProviderError("LINKEDIN_INVALID_RESPONSE", "BACKEND_UNAVAILABLE", detail),
+    new LinkedInProviderError("LINKEDIN_INVALID_RESPONSE", "INVALID_RESPONSE", detail),
   unsupported: (type: SearchType) =>
     new LinkedInProviderError(
-      "LINKEDIN_BACKEND_UNAVAILABLE",
-      "BACKEND_UNAVAILABLE",
+      "LINKEDIN_CAPABILITY_UNSUPPORTED",
+      "CAPABILITY_UNSUPPORTED",
       `Not supported by the currently configured LinkedIn backend (${type}).`,
     ),
 } as const;
@@ -59,8 +68,10 @@ export type ProviderSearchResult<T> = {
   results: T[];
   backend: string | null;
   retrieved_at: string;
-  /** Which concrete provider answered. Set by the composite selector. */
-  provider?: string;
+  provider: string;
+  source: DataSource;
+  isLinkedInSourced: boolean;
+  retrievedAt: string;
 };
 
 /**
@@ -70,6 +81,9 @@ export type ProviderSearchResult<T> = {
 export interface LinkedInProvider {
   readonly id: string;
   readonly label: string;
+  readonly source: DataSource;
+  readonly isLinkedInSourced: boolean;
+  readonly configured?: boolean;
   healthCheck(): Promise<ProviderCapabilities>;
   getCapabilities(): Promise<ProviderCapabilities>;
   searchPeople(args: ProviderSearchArgs): Promise<ProviderSearchResult<PersonResult>>;

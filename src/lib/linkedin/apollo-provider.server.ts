@@ -31,7 +31,15 @@ const MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
  * that is not listed here is dropped rather than silently mistranslated.
  */
 export const APOLLO_SUPPORTED_FILTERS: Partial<Record<SearchType, FilterKey[]>> = {
-  people: ["keywords", "person_name", "job_title", "location", "country", "current_company", "seniority"],
+  people: [
+    "keywords",
+    "person_name",
+    "job_title",
+    "location",
+    "country",
+    "current_company",
+    "seniority",
+  ],
   companies: ["keywords", "company", "location", "country", "industry"],
 };
 
@@ -113,13 +121,16 @@ export function mapApolloPerson(raw: Raw, retrievedAt: string, index = 0): Perso
         }))
       : null,
     source: "apollo",
+    provider: "apollo",
+    isLinkedInSourced: false,
+    retrievedAt,
     retrieved_at: retrievedAt,
   };
 }
 
 function joinName(raw: Raw): string | null {
-  const parts = [text(raw, "first_name"), text(raw, "last_name")].filter(
-    (part): part is string => Boolean(part),
+  const parts = [text(raw, "first_name"), text(raw, "last_name")].filter((part): part is string =>
+    Boolean(part),
   );
   return parts.length > 0 ? parts.join(" ") : null;
 }
@@ -135,6 +146,9 @@ export function mapApolloCompany(raw: Raw, retrievedAt: string, index = 0): Comp
     linkedin_url: text(raw, "linkedin_url"),
     website: text(raw, "website_url"),
     source: "apollo",
+    provider: "apollo",
+    isLinkedInSourced: false,
+    retrievedAt,
     retrieved_at: retrievedAt,
   };
 }
@@ -149,6 +163,8 @@ export function mapApolloCompany(raw: Raw, retrievedAt: string, index = 0): Comp
 export class ApolloResearchProvider implements LinkedInProvider {
   readonly id = "apollo";
   readonly label = "Apollo professional data";
+  readonly source = "apollo" as const;
+  readonly isLinkedInSourced = false;
   private readonly config: ApolloConfig;
   private readonly doFetch: typeof fetch;
   private capabilityCache: { value: ProviderCapabilities; at: number } | undefined;
@@ -190,12 +206,13 @@ export class ApolloResearchProvider implements LinkedInProvider {
     if (response.status === 401) throw PROVIDER_ERRORS.authRequired();
     if (response.status === 403) {
       throw new LinkedInProviderError(
-        "LINKEDIN_AUTH_REQUIRED",
-        "AUTH_REQUIRED",
+        "LINKEDIN_PERMISSION_DENIED",
+        "PERMISSION_DENIED",
         "The connected Apollo key cannot call this endpoint. Enable it (or use a master key) in Apollo under Integrations → API.",
       );
     }
-    if (response.status === 429) throw PROVIDER_ERRORS.rateLimited("Apollo rate limit reached. Try again shortly.");
+    if (response.status === 429)
+      throw PROVIDER_ERRORS.rateLimited("Apollo rate limit reached. Try again shortly.");
     if (response.status === 408 || response.status === 504) throw PROVIDER_ERRORS.timeout();
 
     let payload: unknown;
@@ -206,10 +223,7 @@ export class ApolloResearchProvider implements LinkedInProvider {
     }
 
     if (!response.ok) {
-      const detail = isRaw(payload) ? text(payload, "error", "error_message", "message") : null;
-      throw PROVIDER_ERRORS.unavailable(
-        detail ? `Apollo request failed (${response.status}): ${detail}` : `Apollo request failed (${response.status}).`,
-      );
+      throw PROVIDER_ERRORS.unavailable(`Apollo returned an error (status ${response.status}).`);
     }
 
     if (!isRaw(payload)) throw PROVIDER_ERRORS.invalidResponse();
@@ -229,7 +243,8 @@ export class ApolloResearchProvider implements LinkedInProvider {
   async healthCheck(): Promise<ProviderCapabilities> {
     const checkedAt = new Date().toISOString();
     let authenticated = false;
-    const capabilities: ("profile_search" | "company_search" | "job_search" | "profile_detail")[] = [];
+    const capabilities: ("profile_search" | "company_search" | "job_search" | "profile_detail")[] =
+      [];
     let message: string | null = null;
 
     try {
@@ -261,8 +276,10 @@ export class ApolloResearchProvider implements LinkedInProvider {
     // Apollo has no job-posting search API. This is reported honestly and never
     // advertised as supported.
     const supportedFilters: Partial<Record<SearchType, FilterKey[]>> = {};
-    if (capabilities.includes("profile_search")) supportedFilters.people = APOLLO_SUPPORTED_FILTERS.people!;
-    if (capabilities.includes("company_search")) supportedFilters.companies = APOLLO_SUPPORTED_FILTERS.companies!;
+    if (capabilities.includes("profile_search"))
+      supportedFilters.people = APOLLO_SUPPORTED_FILTERS.people!;
+    if (capabilities.includes("company_search"))
+      supportedFilters.companies = APOLLO_SUPPORTED_FILTERS.companies!;
 
     const result = normalizeCapabilities(
       {
@@ -317,6 +334,10 @@ export class ApolloResearchProvider implements LinkedInProvider {
     return {
       results: rows.map((row, i) => mapApolloPerson(row, retrievedAt, i)),
       backend: "apollo",
+      provider: this.id,
+      source: this.source,
+      isLinkedInSourced: this.isLinkedInSourced,
+      retrievedAt,
       retrieved_at: retrievedAt,
     };
   }
@@ -345,6 +366,10 @@ export class ApolloResearchProvider implements LinkedInProvider {
     return {
       results: rows.map((row, i) => mapApolloCompany(row, retrievedAt, i)),
       backend: "apollo",
+      provider: this.id,
+      source: this.source,
+      isLinkedInSourced: this.isLinkedInSourced,
+      retrievedAt,
       retrieved_at: retrievedAt,
     };
   }

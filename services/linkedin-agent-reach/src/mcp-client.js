@@ -68,13 +68,13 @@ export class McpStdioClient {
     this.#proc.stderr.on("data", (chunk) => {
       const text = String(chunk).trim();
       if (!text) return;
-      // stderr can carry login prompts / rate-limit notices; keep the last line
-      // for the capability report but never forward it verbatim to the app.
-      this.#lastError = text.split("\n").pop() ?? text;
-      this.logger.warn(`[mcp-server-linkedin] ${text}`);
+      // MCP stderr may contain cookies, profile data, or login details. Record
+      // only a classification and never copy the upstream body into logs.
+      this.#lastError = classifyMcpText(text);
+      this.logger.warn(`[mcp-server-linkedin] ${this.#lastError}`);
     });
     this.#proc.on("error", (error) => {
-      this.#lastError = error.message;
+      this.#lastError = "MCP process error.";
       this.#failAllPending(error);
     });
     this.#proc.on("exit", (code, signal) => {
@@ -173,6 +173,17 @@ export class McpStdioClient {
     if (this.#proc) this.#proc.kill("SIGTERM");
     this.#proc = null;
   }
+}
+
+function classifyMcpText(text) {
+  if (/rate|too many|429/i.test(text)) return "MCP provider reported rate limiting.";
+  if (/log ?in|sign ?in|unauthorized|not authenticated|session expired/i.test(text)) {
+    return "MCP provider requires authentication.";
+  }
+  if (/restricted|locked|challenge/i.test(text))
+    return "MCP provider reported an account restriction.";
+  if (/forbidden|permission|access denied/i.test(text)) return "MCP provider denied permission.";
+  return "MCP provider wrote an error message.";
 }
 
 /** Flattens MCP tool content into text so JSON payloads can be recovered. */

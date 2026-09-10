@@ -13,7 +13,7 @@ import { spawn } from "node:child_process";
 const command = process.env.MCP_COMMAND ?? "mcp-server-linkedin";
 const args = [...(process.env.MCP_ARGS ?? "").split(" ").filter(Boolean), "--login"];
 
-console.log(`Starting LinkedIn login: ${command} ${args.join(" ")}`);
+console.log("Starting the configured LinkedIn login command.");
 const child = spawn(command, args, { stdio: "inherit", env: process.env });
 child.on("exit", (code) => {
   console.log(

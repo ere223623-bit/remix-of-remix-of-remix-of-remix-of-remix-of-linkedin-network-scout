@@ -87,7 +87,10 @@ async function probeAuthenticated(tools) {
       const data = dataOf(await mcp.callTool(session.name, {}));
       if (data && typeof data === "object") {
         if (data.authenticated === false || data.logged_in === false) return false;
-        if (typeof data.text === "string" && /log ?in|sign ?in|not authenticated/i.test(data.text)) {
+        if (
+          typeof data.text === "string" &&
+          /log ?in|sign ?in|not authenticated/i.test(data.text)
+        ) {
           return false;
         }
       }
@@ -112,6 +115,18 @@ async function probeAuthenticated(tools) {
 
 function isAuthError(error) {
   return /log ?in|sign ?in|unauthorized|not authenticated|session expired|cookie/i.test(
+    String(error?.message ?? ""),
+  );
+}
+
+function isPermissionError(error) {
+  return /forbidden|permission denied|access denied|not permitted/i.test(
+    String(error?.message ?? ""),
+  );
+}
+
+function isRestrictedError(error) {
+  return /account (?:is )?(?:restricted|locked)|security challenge|checkpoint/i.test(
     String(error?.message ?? ""),
   );
 }
@@ -142,23 +157,52 @@ async function capabilityReport() {
 async function handleSearch(body) {
   const type = body?.type;
   if (!["people", "companies", "jobs"].includes(type)) {
-    return { status: 400, payload: { error: { code: "BAD_REQUEST", message: "Unknown search type." } } };
+    return {
+      status: 400,
+      payload: { error: { code: "BAD_REQUEST", message: "Unknown search type." } },
+    };
   }
   const report = await capabilityReport();
   if (report.status === STATUS.SERVICE_OFFLINE) {
-    return { status: 503, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: report.message }, status: report.status } };
+    return {
+      status: 503,
+      payload: {
+        error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: report.message },
+        status: report.status,
+      },
+    };
   }
   if (report.status === STATUS.LOGIN_REQUIRED) {
-    return { status: 401, payload: { error: { code: "LINKEDIN_AUTH_REQUIRED", message: report.message }, status: report.status } };
+    return {
+      status: 401,
+      payload: {
+        error: { code: "LINKEDIN_AUTH_REQUIRED", message: report.message },
+        status: report.status,
+      },
+    };
   }
   if (report.status === STATUS.SEARCH_UNAVAILABLE) {
-    return { status: 503, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: report.message }, status: report.status } };
+    return {
+      status: 503,
+      payload: {
+        error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: report.message },
+        status: report.status,
+      },
+    };
   }
 
   const tools = await mcp.listTools();
   const tool = resolveToolMap(tools)[type];
   if (!tool) {
-    return { status: 503, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: `No ${type} search tool is exposed.` } } };
+    return {
+      status: 503,
+      payload: {
+        error: {
+          code: "LINKEDIN_BACKEND_UNAVAILABLE",
+          message: `No ${type} search tool is exposed.`,
+        },
+      },
+    };
   }
 
   const filters = body?.filters && typeof body.filters === "object" ? body.filters : {};
@@ -184,28 +228,87 @@ async function handleSearch(body) {
     };
   } catch (error) {
     if (error?.isTimeout) {
-      return { status: 504, payload: { error: { code: "LINKEDIN_TIMEOUT", message: "LinkedIn did not respond in time." } } };
+      return {
+        status: 504,
+        payload: {
+          error: { code: "LINKEDIN_TIMEOUT", message: "LinkedIn did not respond in time." },
+        },
+      };
     }
     if (isAuthError(error)) {
-      return { status: 401, payload: { error: { code: "LINKEDIN_AUTH_REQUIRED", message: "The LinkedIn session needs login on the sidecar host." } } };
+      return {
+        status: 401,
+        payload: {
+          error: {
+            code: "LINKEDIN_AUTH_REQUIRED",
+            message: "The LinkedIn session needs login on the sidecar host.",
+          },
+        },
+      };
+    }
+    if (isPermissionError(error)) {
+      return {
+        status: 403,
+        payload: {
+          error: {
+            code: "LINKEDIN_PERMISSION_DENIED",
+            message: "The LinkedIn account does not permit this operation.",
+          },
+        },
+      };
+    }
+    if (isRestrictedError(error)) {
+      return {
+        status: 423,
+        payload: {
+          error: {
+            code: "LINKEDIN_ACCOUNT_RESTRICTED",
+            message: "The LinkedIn account is restricted.",
+          },
+        },
+      };
     }
     if (/rate|too many|429/i.test(String(error?.message))) {
-      return { status: 429, payload: { error: { code: "LINKEDIN_RATE_LIMITED", message: "LinkedIn rate limited this session." } } };
+      return {
+        status: 429,
+        payload: {
+          error: { code: "LINKEDIN_RATE_LIMITED", message: "LinkedIn rate limited this session." },
+        },
+      };
     }
-    console.error("[search] failed:", error?.message);
-    return { status: 502, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: "The LinkedIn backend failed to complete the search." } } };
+    console.error("[search] LinkedIn backend failed without a safe error classification.");
+    return {
+      status: 502,
+      payload: {
+        error: {
+          code: "LINKEDIN_BACKEND_UNAVAILABLE",
+          message: "The LinkedIn backend failed to complete the search.",
+        },
+      },
+    };
   }
 }
 
 async function handleProfile(body) {
   const url = typeof body?.profile_url === "string" ? body.profile_url.trim() : "";
   if (!/^https:\/\/([a-z]{2,3}\.)?linkedin\.com\//i.test(url)) {
-    return { status: 400, payload: { error: { code: "BAD_REQUEST", message: "A LinkedIn profile URL is required." } } };
+    return {
+      status: 400,
+      payload: { error: { code: "BAD_REQUEST", message: "A LinkedIn profile URL is required." } },
+    };
   }
   const tools = await mcp.listTools();
   const tool = resolveToolMap(tools).profile;
   if (!tool) {
-    return { status: 503, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: "Profile detail is not supported by this backend." } } };
+    return {
+      status: 503,
+      payload: {
+        error: {
+          code: "LINKEDIN_BACKEND_UNAVAILABLE",
+          message: "Profile detail is not supported by this backend.",
+        },
+      },
+    };
   }
   try {
     const raw = dataOf(await mcp.callTool(tool.name, { profile_url: url, url }));
@@ -213,9 +316,47 @@ async function handleProfile(body) {
     return { status: 200, payload: { profile, retrieved_at: new Date().toISOString() } };
   } catch (error) {
     if (isAuthError(error)) {
-      return { status: 401, payload: { error: { code: "LINKEDIN_AUTH_REQUIRED", message: "The LinkedIn session needs login on the sidecar host." } } };
+      return {
+        status: 401,
+        payload: {
+          error: {
+            code: "LINKEDIN_AUTH_REQUIRED",
+            message: "The LinkedIn session needs login on the sidecar host.",
+          },
+        },
+      };
     }
-    return { status: 502, payload: { error: { code: "LINKEDIN_BACKEND_UNAVAILABLE", message: "The profile could not be retrieved." } } };
+    if (isPermissionError(error)) {
+      return {
+        status: 403,
+        payload: {
+          error: {
+            code: "LINKEDIN_PERMISSION_DENIED",
+            message: "The LinkedIn account does not permit this operation.",
+          },
+        },
+      };
+    }
+    if (isRestrictedError(error)) {
+      return {
+        status: 423,
+        payload: {
+          error: {
+            code: "LINKEDIN_ACCOUNT_RESTRICTED",
+            message: "The LinkedIn account is restricted.",
+          },
+        },
+      };
+    }
+    return {
+      status: 502,
+      payload: {
+        error: {
+          code: "LINKEDIN_BACKEND_UNAVAILABLE",
+          message: "The profile could not be retrieved.",
+        },
+      },
+    };
   }
 }
 
@@ -251,8 +392,13 @@ const server = createServer(async (request, response) => {
     }
     return fail(response, 404, "NOT_FOUND", "Unknown endpoint.");
   } catch (error) {
-    console.error("[sidecar] unhandled:", error?.message);
-    return fail(response, 500, "LINKEDIN_BACKEND_UNAVAILABLE", "The sidecar failed to handle the request.");
+    console.error("[sidecar] request failed without a safe error classification.");
+    return fail(
+      response,
+      500,
+      "LINKEDIN_BACKEND_UNAVAILABLE",
+      "The sidecar failed to handle the request.",
+    );
   }
 });
 
@@ -260,7 +406,7 @@ server.headersTimeout = 65_000;
 server.requestTimeout = 90_000;
 server.listen(PORT, HOST, () => {
   console.log(`linkedin-agent-reach listening on ${HOST}:${PORT}`);
-  mcp.ensureStarted().catch((error) => console.error("[mcp] start failed:", error?.message));
+  mcp.ensureStarted().catch(() => console.error("[mcp] start failed."));
 });
 
 for (const signal of ["SIGINT", "SIGTERM"]) {

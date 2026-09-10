@@ -23,6 +23,7 @@ export type Database = {
           id: string
           kind: string
           status: string
+          user_id: string | null
         }
         Insert: {
           backend?: string | null
@@ -32,6 +33,7 @@ export type Database = {
           id?: string
           kind: string
           status: string
+          user_id?: string | null
         }
         Update: {
           backend?: string | null
@@ -41,6 +43,7 @@ export type Database = {
           id?: string
           kind?: string
           status?: string
+          user_id?: string | null
         }
         Relationships: []
       }
@@ -48,7 +51,9 @@ export type Database = {
         Row: {
           backend: string | null
           id: string
+          is_linkedin_sourced: boolean
           payload: Json
+          provider: string | null
           result_type: string
           retrieved_at: string
           search_id: string | null
@@ -58,7 +63,9 @@ export type Database = {
         Insert: {
           backend?: string | null
           id?: string
+          is_linkedin_sourced?: boolean
           payload: Json
+          provider?: string | null
           result_type: string
           retrieved_at?: string
           search_id?: string | null
@@ -68,7 +75,9 @@ export type Database = {
         Update: {
           backend?: string | null
           id?: string
+          is_linkedin_sourced?: boolean
           payload?: Json
+          provider?: string | null
           result_type?: string
           retrieved_at?: string
           search_id?: string | null
@@ -92,12 +101,14 @@ export type Database = {
           favorite: boolean
           headline: string | null
           id: string
+          is_linkedin_sourced: boolean
           job_title: string | null
           location: string | null
           name: string | null
           notes: string | null
           payload: Json
           profile_url: string | null
+          provider: string | null
           retrieved_at: string | null
           source: string
           tags: string[]
@@ -109,12 +120,14 @@ export type Database = {
           favorite?: boolean
           headline?: string | null
           id?: string
+          is_linkedin_sourced?: boolean
           job_title?: string | null
           location?: string | null
           name?: string | null
           notes?: string | null
           payload?: Json
           profile_url?: string | null
+          provider?: string | null
           retrieved_at?: string | null
           source?: string
           tags?: string[]
@@ -126,12 +139,14 @@ export type Database = {
           favorite?: boolean
           headline?: string | null
           id?: string
+          is_linkedin_sourced?: boolean
           job_title?: string | null
           location?: string | null
           name?: string | null
           notes?: string | null
           payload?: Json
           profile_url?: string | null
+          provider?: string | null
           retrieved_at?: string | null
           source?: string
           tags?: string[]
@@ -147,9 +162,12 @@ export type Database = {
           error_code: string | null
           filters: Json
           id: string
+          is_linkedin_sourced: boolean
+          provider: string | null
           query: string
           result_count: number
           search_type: string
+          source: string
           status: string
           user_id: string
         }
@@ -160,9 +178,12 @@ export type Database = {
           error_code?: string | null
           filters?: Json
           id?: string
+          is_linkedin_sourced?: boolean
+          provider?: string | null
           query?: string
           result_count?: number
           search_type: string
+          source?: string
           status?: string
           user_id?: string
         }
@@ -173,9 +194,12 @@ export type Database = {
           error_code?: string | null
           filters?: Json
           id?: string
+          is_linkedin_sourced?: boolean
+          provider?: string | null
           query?: string
           result_count?: number
           search_type?: string
+          source?: string
           status?: string
           user_id?: string
         }
@@ -295,8 +319,7 @@ export type Tables<
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
@@ -320,8 +343,7 @@ export type TablesInsert<
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
   TableName extends (DefaultSchemaTableNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }
@@ -345,8 +367,7 @@ export type TablesUpdate<
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
+    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
   EnumName extends (DefaultSchemaEnumNameOrOptions extends {
     schema: keyof DatabaseWithoutInternals
   }

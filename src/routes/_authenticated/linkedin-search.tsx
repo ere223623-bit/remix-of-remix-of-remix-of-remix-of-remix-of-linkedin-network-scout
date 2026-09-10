@@ -114,6 +114,9 @@ function LinkedInSearchPage() {
           notes: null,
           tags: [],
           favorite: false,
+          provider: person.provider,
+          source: person.source,
+          isLinkedInSourced: person.isLinkedInSourced,
           retrieved_at: person.retrieved_at,
         },
       }),
@@ -246,8 +249,8 @@ function LinkedInSearchPage() {
             </h2>
             {searchResult?.success ? (
               <span className="text-muted-foreground text-xs">
-                Source: {searchResult.backend ?? "linkedin"} · retrieved{" "}
-                {new Date(searchResult.retrieved_at).toLocaleString()}
+                Source: {SOURCE_LABELS[searchResult.source]} via {searchResult.provider} · retrieved{" "}
+                {new Date(searchResult.retrievedAt).toLocaleString()}
               </span>
             ) : null}
           </div>
@@ -412,7 +415,7 @@ function ResultCard({
               </Button>
             ) : null}
           </div>
-          <SourceLine retrievedAt={p.retrieved_at} />
+          <SourceLine result={p} />
         </CardContent>
       </Card>
     );
@@ -432,7 +435,7 @@ function ResultCard({
             <Field label="Website" value={c.website} />
           </dl>
           {c.description ? <p className="text-sm">{c.description}</p> : null}
-          <SourceLine retrievedAt={c.retrieved_at} />
+          <SourceLine result={c} />
         </CardContent>
       </Card>
     );
@@ -451,7 +454,7 @@ function ResultCard({
           <Field label="Published" value={j.published_at} />
         </dl>
         {j.description ? <p className="text-sm">{j.description}</p> : null}
-        <SourceLine retrievedAt={j.retrieved_at} />
+        <SourceLine result={j} />
       </CardContent>
     </Card>
   );
@@ -467,10 +470,11 @@ function Field({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function SourceLine({ retrievedAt }: { retrievedAt: string }) {
+function SourceLine({ result }: { result: AnyResult }) {
   return (
     <p className="text-muted-foreground border-t pt-2 text-[11px] uppercase tracking-wide">
-      Source data · LinkedIn · retrieved {new Date(retrievedAt).toLocaleString()}
+      Source data · {SOURCE_LABELS[result.source]} via {result.provider} · retrieved{" "}
+      {new Date(result.retrievedAt).toLocaleString()}
     </p>
   );
 }

@@ -1,7 +1,4 @@
-import {
-  AgentReachLinkedInProvider,
-  readAgentReachConfig,
-} from "./agent-reach-provider.server";
+import { AgentReachLinkedInProvider, readAgentReachConfig } from "./agent-reach-provider.server";
 import { ApolloResearchProvider, readApolloConfig } from "./apollo-provider.server";
 import { CompositeLinkedInProvider } from "./composite-provider.server";
 import { LovableLinkedInProvider, readLovableLinkedInConfig } from "./lovable-provider.server";
@@ -56,11 +53,14 @@ export function createProviderPair(): { primary: LinkedInProvider; fallback: Lin
 }
 
 export function createLinkedInProvider(): LinkedInProvider {
-  const { linkedInConnector, apollo, agentReach } = createProviderSet();
-  return new CompositeLinkedInProvider(linkedInConnector, apollo, agentReach);
+  const { linkedInConnector, agentReach } = createProviderSet();
+  return new CompositeLinkedInProvider(linkedInConnector, agentReach);
 }
 
 class UnconfiguredProvider implements LinkedInProvider {
+  readonly configured = false;
+  readonly source;
+  readonly isLinkedInSourced;
   private readonly error: ReturnType<typeof PROVIDER_ERRORS.configuration>;
 
   constructor(
@@ -68,6 +68,8 @@ class UnconfiguredProvider implements LinkedInProvider {
     readonly label: string,
     cause?: unknown,
   ) {
+    this.source = id === "apollo" ? ("apollo" as const) : ("linkedin" as const);
+    this.isLinkedInSourced = id !== "apollo";
     this.error =
       cause instanceof Error && cause.name === "LinkedInProviderError"
         ? (cause as ReturnType<typeof PROVIDER_ERRORS.configuration>)
@@ -95,8 +97,11 @@ class UnconfiguredProvider implements LinkedInProvider {
 }
 
 class UnconfiguredAgentReachProvider implements LinkedInProvider {
+  readonly configured = false;
   readonly id = "agent-reach";
   readonly label = "Agent Reach sidecar (not configured)";
+  readonly source = "linkedin" as const;
+  readonly isLinkedInSourced = true;
   private readonly error = PROVIDER_ERRORS.configuration(
     "The Agent Reach sidecar is not configured.",
   );
