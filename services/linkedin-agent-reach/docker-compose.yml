@@ -1,0 +1,25 @@
+services:
+  linkedin-agent-reach:
+    build: .
+    container_name: linkedin-agent-reach
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      MCP_COMMAND: mcp-server-linkedin
+      MCP_PROFILE_DIR: /data/linkedin-profile
+      MCP_REQUEST_TIMEOUT_MS: "60000"
+      RATE_LIMIT: "30"
+      LINKEDIN_SERVICE_TOKEN: ${LINKEDIN_SERVICE_TOKEN:?set LINKEDIN_SERVICE_TOKEN}
+    volumes:
+      - linkedin-session:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  linkedin-session:

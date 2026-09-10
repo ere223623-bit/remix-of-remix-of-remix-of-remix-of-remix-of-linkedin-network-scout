@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1788957916190,
+      "tag": "0000_linkedin_module",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788959223453,
+      "tag": "0001_create_profiles_table",
+      "breakpoints": true
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "linkedin-agent-reach",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Agent Reach sidecar: exposes a signed-in mcp-server-linkedin session over an authenticated HTTP contract.",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "login": "node src/login.js",
+    "check": "node --check src/server.js && node --check src/mcp-client.js && node --check src/capability.js && node --check src/map-results.js"
+  },
+  "dependencies": {}
+}

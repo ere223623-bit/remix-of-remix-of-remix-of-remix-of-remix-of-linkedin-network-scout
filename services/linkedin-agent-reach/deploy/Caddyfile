@@ -1,0 +1,57 @@
+# HTTPS termination + hardening in front of the Agent Reach sidecar.
+# The container itself is never exposed directly to the internet.
+
+{$SIDECAR_DOMAIN} {
+	encode zstd gzip
+
+	# Basic abuse control at the edge; the sidecar rate-limits per client too.
+	request_body {
+		max_size 64KB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		-Server
+	}
+
+	# Liveness probe only — returns no LinkedIn or session data.
+	handle /healthz {
+		reverse_proxy linkedin-agent-reach:8787
+	}
+
+	# Everything else requires the bearer token, enforced by the sidecar itself.
+	handle /health* {
+		reverse_proxy linkedin-agent-reach:8787
+	}
+	handle /status* {
+		reverse_proxy linkedin-agent-reach:8787
+	}
+	handle /search* {
+		reverse_proxy linkedin-agent-reach:8787 {
+			transport http {
+				response_header_timeout 90s
+				dial_timeout 5s
+			}
+		}
+	}
+	handle /profile* {
+		reverse_proxy linkedin-agent-reach:8787 {
+			transport http {
+				response_header_timeout 90s
+				dial_timeout 5s
+			}
+		}
+	}
+
+	# Any other path is not part of the contract.
+	handle {
+		respond "Not found" 404
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

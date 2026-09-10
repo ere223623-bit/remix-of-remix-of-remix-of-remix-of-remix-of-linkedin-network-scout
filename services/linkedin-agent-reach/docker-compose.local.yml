@@ -1,0 +1,41 @@
+# MODE A — LOCAL DEVELOPMENT / VERIFICATION ONLY.
+# Binds to 127.0.0.1 only. Expose it with a secure tunnel, never by port-forwarding.
+#
+#   docker compose -f docker-compose.local.yml up -d --build
+#
+services:
+  linkedin-agent-reach:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: linkedin-agent-reach:local
+    container_name: linkedin-agent-reach-local
+    restart: unless-stopped
+    # Loopback only: the tunnel is the single ingress path.
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      PORT: "8787"
+      HOST: "0.0.0.0"
+      MCP_COMMAND: ${MCP_COMMAND:-mcp-server-linkedin}
+      MCP_ARGS: ${MCP_ARGS:-}
+      MCP_PROFILE_DIR: /data/linkedin-profile
+      MCP_REQUEST_TIMEOUT_MS: "60000"
+      RATE_LIMIT: "30"
+      LINKEDIN_SERVICE_TOKEN: ${LINKEDIN_SERVICE_TOKEN:?set LINKEDIN_SERVICE_TOKEN in services/linkedin-agent-reach/.env}
+    env_file:
+      - .env
+    volumes:
+      # The signed-in LinkedIn session lives here and survives restarts/rebuilds.
+      - linkedin-session:/data
+    stop_grace_period: 20s
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8787/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  linkedin-session:
+    name: linkedin-session
