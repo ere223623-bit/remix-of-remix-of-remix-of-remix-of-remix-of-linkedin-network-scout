@@ -17,15 +17,15 @@ describe("normalization", () => {
       AT,
     ) as PersonResult[];
 
-    expect(person.name).toBe("Ada Lovelace");
-    expect(person.location).toBe("Riyadh");
-    expect(person.headline).toBeNull();
-    expect(person.company).toBeNull();
-    expect(person.skills).toBeNull();
-    expect(person.source).toBe("linkedin");
-    expect(person.retrieved_at).toBe(AT);
+    expect(person!.name).toBe("Ada Lovelace");
+    expect(person!.location).toBe("Riyadh");
+    expect(person!.headline).toBeNull();
+    expect(person!.company).toBeNull();
+    expect(person!.skills).toBeNull();
+    expect(person!.source).toBe("linkedin");
+    expect(person!.retrieved_at).toBe(AT);
     // Unknown upstream fields are never carried into the normalized shape.
-    expect(Object.keys(person)).not.toContain("unknown_field");
+    expect(Object.keys(person!)).not.toContain("unknown_field");
   });
 
   it("derives job title and company from the first experience entry only", () => {
@@ -34,9 +34,9 @@ describe("normalization", () => {
       [{ name: "X", experience: [{ title: "Engineer", company: "Acme" }] }],
       AT,
     ) as PersonResult[];
-    expect(person.job_title).toBe("Engineer");
-    expect(person.company).toBe("Acme");
-    expect(person.experience).toHaveLength(1);
+    expect(person!.job_title).toBe("Engineer");
+    expect(person!.company).toBe("Acme");
+    expect(person!.experience).toHaveLength(1);
   });
 
   it("normalizes company results", () => {
@@ -45,9 +45,9 @@ describe("normalization", () => {
       [{ company_name: "Acme", industry: "Software" }],
       AT,
     ) as CompanyResult[];
-    expect(company.name).toBe("Acme");
-    expect(company.industry).toBe("Software");
-    expect(company.website).toBeNull();
+    expect(company!.name).toBe("Acme");
+    expect(company!.industry).toBe("Software");
+    expect(company!.website).toBeNull();
   });
 
   it("normalizes job results", () => {
@@ -56,9 +56,9 @@ describe("normalization", () => {
       [{ title: "Software Engineer", company: "Acme", posted_at: "2026-01-01" }],
       AT,
     ) as JobResult[];
-    expect(job.job_title).toBe("Software Engineer");
-    expect(job.published_at).toBe("2026-01-01");
-    expect(job.description).toBeNull();
+    expect(job!.job_title).toBe("Software Engineer");
+    expect(job!.published_at).toBe("2026-01-01");
+    expect(job!.description).toBeNull();
   });
 
   it("returns an empty array for invalid normalization input", () => {
