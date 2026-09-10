@@ -270,13 +270,18 @@ export const getLinkedInSearchHistory = createServerFn({ method: "GET" })
 export const getLinkedInDiagnostics = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<DiagnosticsResponse> => {
-    const { createProviderPair } = await import("./factory.server");
-    const { primary, fallback } = createProviderPair();
+    const { createProviderSet } = await import("./factory.server");
+    const { linkedInConnector, apollo, agentReach } = createProviderSet();
 
     const providers = await Promise.all(
       [
-        { provider: primary, id: "lovable-linkedin" as const, label: "Lovable LinkedIn connector" },
-        { provider: fallback, id: "agent-reach" as const, label: "Agent Reach sidecar" },
+        {
+          provider: linkedInConnector,
+          id: "lovable-linkedin" as const,
+          label: "Lovable LinkedIn connector",
+        },
+        { provider: apollo, id: "apollo" as const, label: "Apollo professional data" },
+        { provider: agentReach, id: "agent-reach" as const, label: "Agent Reach sidecar" },
       ].map(async ({ provider, id, label }) => {
         const start = performance.now();
         try {

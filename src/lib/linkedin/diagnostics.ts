@@ -2,7 +2,7 @@ import type { ErrorCode, IntegrationState, ProviderCapabilities, SearchType } fr
 
 /** Client-safe diagnostics shape. Contains no tokens, cookies or session data. */
 export type ProviderDiagnostics = {
-  id: "lovable-linkedin" | "agent-reach";
+  id: "lovable-linkedin" | "apollo" | "agent-reach";
   label: string;
   configured: boolean;
   reachable: boolean;
