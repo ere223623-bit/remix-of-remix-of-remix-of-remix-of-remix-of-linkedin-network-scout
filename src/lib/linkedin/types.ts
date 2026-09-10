@@ -4,6 +4,18 @@
 
 export type SearchType = "people" | "companies" | "jobs";
 
+/**
+ * Where a record actually came from. Never label non-LinkedIn data as
+ * "linkedin" — the UI shows this verbatim.
+ */
+export type DataSource = "linkedin" | "apollo" | "apify";
+
+export const SOURCE_LABELS: Record<DataSource, string> = {
+  linkedin: "LinkedIn",
+  apollo: "Apollo",
+  apify: "Apify",
+};
+
 export type Capability =
   | "profile_search"
   | "company_search"
@@ -103,7 +115,7 @@ export type PersonResult = {
   skills: string[] | null;
   education: EducationEntry[] | null;
   experience: ExperienceEntry[] | null;
-  source: "linkedin";
+  source: DataSource;
   retrieved_at: string;
 };
 
@@ -115,7 +127,7 @@ export type CompanyResult = {
   description: string | null;
   linkedin_url: string | null;
   website: string | null;
-  source: "linkedin";
+  source: DataSource;
   retrieved_at: string;
 };
 
@@ -127,7 +139,7 @@ export type JobResult = {
   description: string | null;
   linkedin_url: string | null;
   published_at: string | null;
-  source: "linkedin";
+  source: DataSource;
   retrieved_at: string;
 };
 
