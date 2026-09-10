@@ -18,12 +18,7 @@ import type {
 
 type ProviderEntry = { provider: LinkedInProvider; error?: LinkedInProviderError };
 
-/**
- * Preferred provider order per research type. Apollo runs entirely inside
- * Lovable, so it leads people and company research; the Agent Reach sidecar is
- * kept last as the exact-LinkedIn source. Jobs stay on the LinkedIn-sourced
- * backends — Apollo has no job-posting search and never pretends otherwise.
- */
+/** Preferred order for true LinkedIn-sourced search. Enrichment providers are excluded. */
 const ROUTING: Record<SearchType, string[]> = {
   people: ["lovable-linkedin", "agent-reach"],
   companies: ["lovable-linkedin", "agent-reach"],
@@ -64,7 +59,16 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
     return [...this.providers].sort((a, b) => rank(a) - rank(b));
   }
 
+  private assertConfigured(): void {
+    if (this.providers.length === 0) {
+      throw PROVIDER_ERRORS.configuration(
+        "No LinkedIn search provider is configured. Connect LinkedIn in Lovable project settings or configure the Agent Reach service address and access token.",
+      );
+    }
+  }
+
   async healthCheck(): Promise<ProviderCapabilities> {
+    this.assertConfigured();
     const settled = await Promise.allSettled(this.providers.map((p) => p.healthCheck()));
     const reports = settled.map((result, index) =>
       result.status === "fulfilled"
@@ -95,6 +99,7 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
     args: ProviderSearchArgs,
     runner: (p: LinkedInProvider, args: ProviderSearchArgs) => Promise<ProviderSearchResult<T>>,
   ): Promise<ProviderSearchResult<T> & { provider: string }> {
+    this.assertConfigured();
     const entries: ProviderEntry[] = this.ordered(type).map((provider) => ({ provider }));
 
     for (const entry of entries) {
@@ -180,6 +185,7 @@ export class CompositeLinkedInProvider implements LinkedInProvider {
   }
 
   async getProfile(profileUrl: string): Promise<PersonResult> {
+    this.assertConfigured();
     for (const provider of this.ordered("people")) {
       try {
         const profile = await provider.getProfile(profileUrl);

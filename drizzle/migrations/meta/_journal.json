@@ -22,6 +22,13 @@
       "when": 1789041600000,
       "tag": "0002_linkedin_provenance_and_event_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789045608087,
+      "tag": "0003_backfill_profiles",
+      "breakpoints": true
     }
   ]
 }

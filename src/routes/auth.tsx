@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
@@ -25,8 +25,13 @@ function AuthPage() {
   const navigate = useNavigate();
   const search = useSearch({ from: "/auth" }) as { redirect?: string };
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      void navigate({ to: search.redirect ?? "/linkedin-search", replace: true });
+    }
+  }, [isAuthenticated, navigate, search.redirect]);
+
   if (isAuthenticated) {
-    navigate({ to: search.redirect ?? "/linkedin-search", replace: true });
     return null;
   }
 

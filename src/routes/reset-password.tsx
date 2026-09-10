@@ -29,7 +29,9 @@ function ResetPasswordPage() {
   const [isRecoverySession, setIsRecoverySession] = useState(false);
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event) => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event) => {
       if (event === "PASSWORD_RECOVERY") {
         setIsRecoverySession(true);
       }
@@ -39,7 +41,16 @@ function ResetPasswordPage() {
     if (hash.includes("type=recovery")) {
       setIsRecoverySession(true);
     }
+
+    return () => subscription.unsubscribe();
   }, []);
+
+  useEffect(() => {
+    const recoveryHash = window.location.hash.includes("type=recovery");
+    if (isAuthenticated && !isRecoverySession && !recoveryHash) {
+      void navigate({ to: "/linkedin-search", replace: true });
+    }
+  }, [isAuthenticated, isRecoverySession, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,7 +70,6 @@ function ResetPasswordPage() {
   }
 
   if (isAuthenticated && !isRecoverySession) {
-    navigate({ to: "/linkedin-search", replace: true });
     return null;
   }
 

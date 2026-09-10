@@ -44,12 +44,12 @@ async function fetchProfile(userId: string): Promise<Tables<"profiles"> | null> 
     .from("profiles")
     .select("*")
     .eq("user_id", userId)
-    .single();
+    .maybeSingle();
   if (error) {
     console.error("Failed to load profile:", error);
     return null;
   }
-  return data as Tables<"profiles">;
+  return (data as Tables<"profiles"> | null) ?? null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

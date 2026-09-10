@@ -69,6 +69,19 @@ function provider(
 }
 
 describe("CompositeLinkedInProvider", () => {
+  it("reports configuration required when no LinkedIn provider is configured", async () => {
+    const composite = new CompositeLinkedInProvider();
+
+    await expect(composite.healthCheck()).rejects.toMatchObject({
+      code: "LINKEDIN_CONFIGURATION_ERROR",
+      state: "CONFIGURATION_ERROR",
+    });
+    await expect(composite.searchPeople(ARGS)).rejects.toMatchObject({
+      code: "LINKEDIN_CONFIGURATION_ERROR",
+      state: "CONFIGURATION_ERROR",
+    });
+  });
+
   it("uses the primary provider when it supports the requested capability", async () => {
     const primary = provider("lovable-linkedin");
     const fallback = provider("agent-reach");
