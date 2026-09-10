@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import type { Json } from "@/integrations/supabase/types";
 import {
@@ -54,7 +55,7 @@ function recordError(
 }
 
 export const getLinkedInStatus = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<StatusResponse> => {
     const start = performance.now();
     try {
@@ -94,7 +95,7 @@ export const getLinkedInStatus = createServerFn({ method: "GET" })
   });
 
 export const searchLinkedIn = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => searchRequestSchema.parse(input))
   .handler(async ({ data, context }): Promise<SearchFnResponse> => {
     if (!assertSearchable(data)) {
@@ -210,7 +211,7 @@ export const searchLinkedIn = createServerFn({ method: "POST" })
   });
 
 export const getLinkedInProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => profileRequestSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { createLinkedInProvider } = await import("./factory.server");
@@ -224,7 +225,7 @@ export const getLinkedInProfile = createServerFn({ method: "POST" })
   });
 
 export const saveLinkedInProfile = createServerFn({ method: "POST" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => savedProfileInputSchema.parse(input))
   .handler(async ({ data, context }) => {
     const row = savedProfileRowFor(context.userId, data, toJson);
@@ -240,7 +241,7 @@ export const saveLinkedInProfile = createServerFn({ method: "POST" })
   });
 
 export const getLinkedInSearchHistory = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }) => {
     const { data, error } = await context.supabase
       .from("linkedin_searches")
@@ -263,7 +264,7 @@ export const getLinkedInSearchHistory = createServerFn({ method: "GET" })
 // ---------------------------------------------------------------------------
 
 export const getLinkedInDiagnostics = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .handler(async ({ context }): Promise<DiagnosticsResponse> => {
     const { data: isAdmin, error: roleError } = await context.supabase.rpc("has_role", {
       _user_id: context.userId,

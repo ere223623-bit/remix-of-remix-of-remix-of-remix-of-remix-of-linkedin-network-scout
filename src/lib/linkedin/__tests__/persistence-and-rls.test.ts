@@ -142,7 +142,9 @@ describe("database RLS ownership policies", () => {
   it("requires server-function authentication before persistence access", () => {
     const functions = readFileSync("src/lib/linkedin/linkedin.functions.ts", "utf8");
     expect(
-      functions.match(/middleware\(\[requireSupabaseAuth\]\)/g)?.length,
+      functions.match(
+        /middleware\(\[attachSupabaseAuth, requireSupabaseAuth\]\)/g,
+      )?.length,
     ).toBeGreaterThanOrEqual(6);
   });
 });
